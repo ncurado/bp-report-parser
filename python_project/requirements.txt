@@ -1,0 +1,6 @@
+# Core packages
+pdfplumber
+argparse
+tqdm
+
+# Add your project-specific requirements here
