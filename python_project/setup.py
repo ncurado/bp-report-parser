@@ -5,7 +5,6 @@ setup(
     version="0.1.0",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
-    
     # Add project metadata
     author="Your Name",
     author_email="your.email@example.com",
@@ -18,6 +17,8 @@ setup(
         # List your project dependencies here
         # e.g., "numpy>=1.20.0",
         # "pandas>=1.3.0",
+        "pdfplumber>=0.1.28",
+        "tqdm>=4.62.3",
     ],
     
     # Development dependencies

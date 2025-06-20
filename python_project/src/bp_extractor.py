@@ -12,52 +12,103 @@ from tqdm import tqdm
 
 
 class ProcessingStatus:
-    def __init__(self):
-        self.total_pages = 0
-        self.current_page = 0
-        self.records_found = 0
-        self.start_time = None
-        self.end_time = None
-        self.status = "Not Started"
-        self.error = None
+    """
+    Tracks and manages the status of PDF processing operations.
 
-    def start(self, total_pages):
+    This class maintains information about the progress of processing a PDF file,
+    including page counts, timing, and error states.
+    """
+
+    def __init__(self) -> None:
+        """Initialize a new processing status tracker."""
+        self.total_pages: int = 0
+        self.current_page: int = 0
+        self.records_found: int = 0
+        self.start_time: float | None = None
+        self.end_time: float | None = None
+        self.status: str = "Not Started"
+        self.error: str | None = None
+
+    def start(self, total_pages: int) -> None:
+        """
+        Start processing with the given total number of pages.
+
+        Args:
+            total_pages: The total number of pages to process
+        """
+        if total_pages < 0:
+            raise ValueError("Total pages cannot be negative")
         self.total_pages = total_pages
         self.start_time = time.time()
         self.status = "Processing"
 
-    def update(self, page, records):
+    def update(self, page: int, records: int) -> None:
+        """
+        Update the current processing status.
+
+        Args:
+            page: Current page being processed
+            records: Total number of records found so far
+        """
+        if page < 0 or records < 0:
+            raise ValueError("Page and records count cannot be negative")
         self.current_page = page
         self.records_found = records
 
-    def complete(self):
+    def complete(self) -> None:
+        """Mark the processing as completed."""
         self.end_time = time.time()
         self.status = "Completed"
 
-    def fail(self, error_msg):
+    def fail(self, error_msg: str) -> None:
+        """
+        Mark the processing as failed with an error message.
+
+        Args:
+            error_msg: Description of the error that occurred
+        """
         self.end_time = time.time()
         self.status = "Failed"
         self.error = error_msg
 
-    def get_progress(self):
+    @property
+    def progress(self) -> float:
+        """
+        Calculate the current progress percentage.
+
+        Returns:
+            float: Progress percentage from 0 to 100
+        """
         if self.total_pages == 0:
             return 0
         return (self.current_page / self.total_pages) * 100
 
-    def get_duration(self):
+    @property
+    def duration(self) -> float:
+        """
+        Calculate the elapsed processing time.
+
+        Returns:
+            float: Duration in seconds
+        """
         if self.start_time is None:
             return 0
         end = self.end_time if self.end_time else time.time()
         return end - self.start_time
 
-    def get_status_report(self):
-        duration = self.get_duration()
+    def get_status_report(self) -> str:
+        """
+        Generate a comprehensive status report.
+
+        Returns:
+            str: Formatted status report including progress, timing, and any errors
+        """
         report = [
             f"Status: {self.status}",
-            f"Progress: {self.get_progress():.1f}%",
+            f"Progress: {self.progress:.1f}%",
             f"Pages Processed: {self.current_page}/{self.total_pages}",
             f"Records Found: {self.records_found}",
-            f"Time Elapsed: {duration:.1f} seconds"
+            f"Time Elapsed: {self.duration:.1f} seconds"
         ]
         if self.error:
             report.append(f"Error: {self.error}")
