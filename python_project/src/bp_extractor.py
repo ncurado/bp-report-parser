@@ -181,7 +181,7 @@ def extract_bp_data(pdf_path: str, csv_output_path: str, status: Optional[Proces
         pdf_path: Path to the input PDF file
         csv_output_path: Path to save the output CSV file
         status: Optional status tracking object
-    
+
     Returns:
         bool: True if successful, False otherwise
     """
