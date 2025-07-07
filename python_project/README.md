@@ -102,7 +102,7 @@ The script generates a CSV file with the following columns:
 
 For example:
 
-```
+``` markdown
 Date/Time,Systolic,Diastolic,Pulse
 10/15/23 14:30,120,80,72
 ```
