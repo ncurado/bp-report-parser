@@ -1,0 +1,17 @@
+bp_data_pattern: (\d{1,2}\s\w+,\s\d{2})\s(\d{2}:\d{2})\s+(\d+)\s+(\d+)\s+(\d+)
+csv_delimiter: ','
+csv_headers:
+- Date/Time
+- Systolic
+- Diastolic
+- Pulse
+input_date_format: '%d %B, %y %H:%M'
+max_diastolic: 200
+max_heart_rate: 250
+max_systolic: 300
+min_diastolic: 30
+min_heart_rate: 30
+min_systolic: 50
+output_date_format: '%m/%d/%y %H:%M'
+progress_bar: true
+skip_first_page: true

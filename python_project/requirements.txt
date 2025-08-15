@@ -2,5 +2,6 @@
 pdfplumber
 argparse
 tqdm
+PyYAML
 
 # Add your project-specific requirements here

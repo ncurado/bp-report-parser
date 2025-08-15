@@ -24,10 +24,11 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import List, Optional
 
-# Constants
-DATE_FORMAT = "%d %B, %y %H:%M"
-OUTPUT_DATE_FORMAT = "%m/%d/%y %H:%M"
-CSV_HEADERS = ["Date/Time", "Systolic", "Diastolic", "Pulse"]
+try:
+    from .config import get_config, ConfigManager, ExtractionConfig
+except ImportError:
+    # Handle case when running directly as script
+    from config import get_config, ConfigManager, ExtractionConfig
 
 
 class ProcessingState(Enum):
@@ -47,11 +48,11 @@ class BPRecord:
     heart_rate: int
 
     @classmethod
-    def from_match(cls, date_str: str, time_str: str, sys: str, dia: str, hr: str) -> 'BPRecord':
+    def from_match(cls, date_str: str, time_str: str, sys: str, dia: str, hr: str, config: ExtractionConfig) -> 'BPRecord':
         """Create a BPRecord from matched strings."""
-        date_obj = datetime.strptime(f"{date_str} {time_str}", DATE_FORMAT)
+        date_obj = datetime.strptime(f"{date_str} {time_str}", config.input_date_format)
         return cls(
-            datetime=date_obj.strftime(OUTPUT_DATE_FORMAT),
+            datetime=date_obj.strftime(config.output_date_format),
             systolic=int(sys),
             diastolic=int(dia),
             heart_rate=int(hr)
@@ -94,19 +95,21 @@ class ProcessingStatus:
         if self._progress_bar:
             self._progress_bar.close()
 
-    def start(self, total_pages: int) -> None:
+    def start(self, total_pages: int, show_progress: bool = True) -> None:
         """
         Start processing with the given total number of pages.
 
         Args:
             total_pages: The total number of pages to process
+            show_progress: Whether to show progress bar
         """
         if total_pages < 0:
             raise ValueError("Total pages cannot be negative")
         self.total_pages = total_pages
         self.start_time = time.time()
         self.status = ProcessingState.PROCESSING
-        self._progress_bar = tqdm(total=total_pages, desc="Processing pages")
+        if show_progress:
+            self._progress_bar = tqdm(total=total_pages, desc="Processing pages")
 
     def update(self, page: int, records: int) -> None:
         """
@@ -184,7 +187,7 @@ class ProcessingStatus:
         return "\n".join(report)
 
 
-def extract_bp_data(pdf_path: str, csv_output_path: str, status: Optional[ProcessingStatus] = None) -> bool:
+def extract_bp_data(pdf_path: str, csv_output_path: str, status: Optional[ProcessingStatus] = None, config: Optional[ExtractionConfig] = None) -> bool:
     """
     Extract blood pressure data from a PDF file and save it to a CSV file.
     
@@ -192,12 +195,16 @@ def extract_bp_data(pdf_path: str, csv_output_path: str, status: Optional[Proces
         pdf_path: Path to the input PDF file
         csv_output_path: Path to save the output CSV file
         status: Optional status tracking object
+        config: Optional configuration object
 
     Returns:
         bool: True if successful, False otherwise
     """
     if status is None:
         status = ProcessingStatus()
+    
+    if config is None:
+        config = get_config()
 
     try:
         # Verify input file exists
@@ -209,39 +216,55 @@ def extract_bp_data(pdf_path: str, csv_output_path: str, status: Optional[Proces
 
         # Lists to store the extracted data
         records: List[BPRecord] = []
+        
+        # Compile regex pattern from config
+        pattern = config.get_compiled_pattern()
 
         with pdfplumber.open(pdf_path) as pdf:
+            # Calculate pages to process based on configuration
+            start_page = 1 if config.skip_first_page else 0
+            pages_to_process = len(pdf.pages) - start_page
+            
             # Initialize status
-            status.start(len(pdf.pages) - 1)  # -1 because we skip first page
+            status.start(pages_to_process, config.progress_bar)
 
-            # Iterate through pages starting from page 2 (index 1)
-            for i in range(1, len(pdf.pages)):
+            # Iterate through pages
+            for i in range(start_page, len(pdf.pages)):
                 page = pdf.pages[i]
                 text = page.extract_text()
 
                 # Extract the lines with BP data
                 lines = text.split('\n')
                 for line in lines:
-                    # Match lines containing Date, Time, SBP, DBP, HR
-                    match = re.match(r"(\d{1,2}\s\w+,\s\d{2})\s(\d{2}:\d{2})\s+(\d+)\s+(\d+)\s+(\d+)", line)
+                    # Match lines containing Date, Time, SBP, DBP, HR using config pattern
+                    match = pattern.match(line)
                     if match:
-                        record = BPRecord.from_match(*match.groups())
-                        records.append(record)
+                        try:
+                            record = BPRecord.from_match(*match.groups(), config)
+                            
+                            # Validate BP values if configured
+                            if config.validate_bp_values(record.systolic, record.diastolic, record.heart_rate):
+                                records.append(record)
+                            else:
+                                print(f"Warning: Skipping invalid BP values: {record.systolic}/{record.diastolic} HR:{record.heart_rate}")
+                        except ValueError as e:
+                            print(f"Warning: Skipping invalid date format in line: {line} ({e})")
 
-                status.update(i, len(records))
+                status.update(i - start_page + 1, len(records))
 
         # Create output directory if it doesn't exist
         output_dir = Path(csv_output_path).parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write the extracted data to a CSV file
+        # Write the extracted data to a CSV file using config settings
         with open(csv_output_path, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(CSV_HEADERS)
+            writer = csv.writer(file, delimiter=config.csv_delimiter)
+            writer.writerow(config.csv_headers)
             writer.writerows(record.to_list() for record in records)
 
         status.complete()
         print(f"\nCSV file saved successfully: {csv_output_path}")
+        print(f"Processed {len(records)} records")
         return True
 
     except pdfplumber.PDFSyntaxError:
@@ -269,24 +292,55 @@ def main() -> None:
     )
     parser.add_argument(
         'input_pdf',
+        nargs='?',
         help='Path to the input PDF file'
     )
     parser.add_argument(
         'output_csv',
+        nargs='?',
         help='Path for the output CSV file'
+    )
+    parser.add_argument(
+        '--config',
+        type=str,
+        help='Path to configuration file (YAML or JSON)'
     )
     parser.add_argument(
         '--status',
         action='store_true',
         help='Print detailed status information'
     )
+    parser.add_argument(
+        '--create-config',
+        action='store_true',
+        help='Create a default configuration file and exit'
+    )
 
     # Parse arguments
     args = parser.parse_args()
 
+    # Handle config creation
+    if args.create_config:
+        config_manager = ConfigManager(args.config)
+        config_manager.create_default_config()
+        print("Default configuration file created successfully.")
+        sys.exit(0)
+    
+    # Validate required arguments when not creating config
+    if not args.input_pdf or not args.output_csv:
+        parser.error("input_pdf and output_csv are required unless using --create-config")
+
+    # Load configuration
+    try:
+        config = get_config(args.config)
+    except Exception as e:
+        print(f"Error loading configuration: {e}")
+        print("Using default configuration.")
+        config = ExtractionConfig()
+
     # Use context manager for status tracking
     with ProcessingStatus() as status:
-        success = extract_bp_data(args.input_pdf, args.output_csv, status)
+        success = extract_bp_data(args.input_pdf, args.output_csv, status, config)
         
         # Print final status if requested
         if args.status:
